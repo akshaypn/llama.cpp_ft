@@ -240,14 +240,33 @@ static void print_lora_params(struct my_llama_lora_hparams * params) {
 
 static void load_model_hparams_gguf(struct gguf_context * ctx, struct my_llama_hparams * hparams, const char * expected_arch) {
     std::string arch;
+    static const std::unordered_set<std::string> kSupportedArch = {
+        "llama", "qwen2", "qwen3"
+    };
+    if (kSupportedArch.find(arch) == kSupportedArch.end()) {
+        fprintf(stderr, "%s: unsupported architecture '%s' (expected '%s' or 'qwen2')\n",
+                __func__, arch.c_str(), expected_arch);
+        GGML_ASSERT(false);
+    }
 
     GGUF_GET_KEY(ctx, arch, gguf_get_val_str, GGUF_TYPE_STRING, true, LLM_KV_GENERAL_ARCHITECTURE);
+    
+    // add qwen3 support as well
     if (expected_arch != NULL) {
-        if (arch != expected_arch) {
-            printf("%s: arch=%s expected_arch=%s\n", __func__, arch.c_str(), expected_arch);
+       // allow both llama and qwen2 and qwen3
+        if (arch != expected_arch && arch != "qwen2" && arch != "qwen3") {
+            fprintf(stderr, "%s: unsupported architecture '%s' (expected '%s' or 'qwen2')\n",
+                    __func__, arch.c_str(), expected_arch);
+            GGML_ASSERT(false);
         }
-        GGML_ASSERT(arch == expected_arch);
     }
+    
+    // if (expected_arch != NULL) {
+    //     if (arch != expected_arch) {
+    //         printf("%s: arch=%s expected_arch=%s\n", __func__, arch.c_str(), expected_arch);
+    //     }
+    //     GGML_ASSERT(arch == expected_arch);
+    // }
 
     std::vector<char> keybuf;
     keybuf.resize(512);
@@ -300,7 +319,7 @@ static void init_model(struct llama_model * input, struct my_llama_model * model
         };
         struct gguf_context * mctx = gguf_init_from_file(fn_model, params);
 
-        load_model_hparams_gguf(mctx, &hparams, "llama");
+        load_model_hparams_gguf(mctx, &hparams, /* expected_arch = */ NULL);
 
         gguf_free(mctx);
     }
@@ -841,8 +860,9 @@ static void load_llama_lora_gguf(struct gguf_context * fctx, struct ggml_context
     keybuf.resize(512);
 
     GGUF_GET_KEY(fctx, arch, gguf_get_val_str, GGUF_TYPE_STRING, true, LLM_KV_GENERAL_ARCHITECTURE);
-    GGML_ASSERT(arch == "llama");
-
+    if (arch != "llama" && arch != "qwen2") {
+         die_fmt("unsupported arch in LoRA checkpoint: %s", arch.c_str());
+     }
     uint32_t ftype_u;
     GGUF_GET_KEY(fctx, ftype_u, gguf_get_val_u32, GGUF_TYPE_UINT32, true, LLM_KV_GENERAL_FILE_TYPE);
     GGML_ASSERT((enum llama_ftype) ftype_u == LLAMA_FTYPE_ALL_F32);
